@@ -24,7 +24,7 @@ echo "Step 3: Pool consensus sequences by segment into BatchID/BarcodeXX/SampleI
 mkdir -p irma_consensus
 
 # Segment names corresponding to the numbers
-SEGMENTS=("PB2" "PB1" "PA" "NS" "NP" "NA" "MP" "HA")
+SEGMENTS=("PB2" "PB1" "PA" "HA" "NP" "NA" "MP" "NS")
 
 # Initialize output files for each segment
 for seg in "${SEGMENTS[@]}"; do
