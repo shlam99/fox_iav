@@ -244,5 +244,103 @@ for seg in "${SEGMENTS[@]}"; do
 done
 echo "========================================"
 
+########################################
+# Step 5: Nextclade Analysis for all IAV segments
+########################################
+echo "Step 5: Running Nextclade for all IAV segments..."
+echo "Using batch ID: ${BATCH}"
+
+# Make directories for Nextclade results
+mkdir -p nextclade_results/even_segments nextclade_results/odd_segments
+
+# Define segments and their reference names
+declare -A segments=(
+    # Even-numbered segments (HA=4, NA=6, PB1=2, NS=8)
+    ["HA"]="A_HA_H9"
+    ["NA"]="A_NA_N2" 
+    ["PB1"]="A_PB1"
+    ["NS"]="A_NS"
+    
+    # Odd-numbered segments (PB2=1, PA=3, NP=5, MP=7)
+    ["PB2"]="A_PB2"
+    ["PA"]="A_PA"
+    ["NP"]="A_NP"
+    ["MP"]="A_MP"
+)
+
+# Use explicit path to IRMA's consensus.fasta
+REF_FILE="${HOME}/miniconda3/bin/IRMA_RES/modules/FLU_ont/reference/consensus.fasta"
+
+if [[ ! -f "$REF_FILE" ]]; then
+    echo "ERROR: Could not find IRMA reference file at $REF_FILE" >&2
+    exit 1
+fi
+
+echo "Using IRMA reference file: $REF_FILE"
+
+# First extract each reference from consensus.fasta
+TEMP_DIR=$(mktemp -d)
+
+for segment in "${!segments[@]}"; do
+    ref_name="${segments[$segment]}"
+    awk -v RS=">" -v ref="$ref_name" '$1 == ref {print ">" $0}' "$REF_FILE" | head -n -1 > "${TEMP_DIR}/${segment}_ref.fasta"
+    
+    if [[ ! -s "${TEMP_DIR}/${segment}_ref.fasta" ]]; then
+        echo "ERROR: Could not extract reference $ref_name from $REF_FILE" >&2
+        exit 1
+    fi
+done
+
+# Process each segment with appropriate output folder
+for segment in "${!segments[@]}"; do
+    INPUT_FILE="irma_consensus/${segment}_consensus_${BATCH}.fasta"
+    
+    # Determine output directory based on segment type
+    case $segment in
+        HA|NA|PB1|NS)
+            OUTPUT_DIR="nextclade_results/even_segments"
+            ;;
+        PB2|PA|NP|MP)
+            OUTPUT_DIR="nextclade_results/odd_segments"
+            ;;
+        *)
+            echo "Unknown segment: $segment" >&2
+            continue
+            ;;
+    esac
+    
+    OUTPUT_PREFIX="${OUTPUT_DIR}/${segment}_consensus_${BATCH}"
+    SEGMENT_REF="${TEMP_DIR}/${segment}_ref.fasta"
+    
+    if [[ -f "$INPUT_FILE" ]]; then
+        echo "Processing $segment segment (${segments[$segment]}) → $OUTPUT_DIR"
+        echo "Input file: $INPUT_FILE"
+        
+        nextclade run \
+            "$INPUT_FILE" \
+            --output-csv "${OUTPUT_PREFIX}_nextclade.csv" \
+            --output-json "${OUTPUT_PREFIX}_nextclade.json" \
+            --output-fasta "${OUTPUT_PREFIX}_aligned.fasta" \
+            --input-ref "$SEGMENT_REF" \
+            --output-tree "${OUTPUT_PREFIX}_tree.json" \
+            --output-ndjson "${OUTPUT_PREFIX}_nextclade.ndjson" \
+            --jobs $THREADS
+        
+        if [ $? -eq 0 ]; then
+            echo "Successfully processed $segment segment"
+        else
+            echo "Error processing $segment segment with Nextclade" >&2
+        fi
+    else
+        echo "$segment input file $INPUT_FILE not found, skipping analysis"
+    fi
+done
+
+# Clean up temporary files
+rm -rf "$TEMP_DIR"
+
+step_complete "5" "Nextclade analysis complete for all IAV segments"
+
+
 END_TIME=$(date +%s)
 echo "Total pipeline runtime for ${BATCH}: $((END_TIME - START_TIME)) seconds"
