@@ -253,20 +253,10 @@ echo "Using batch ID: ${BATCH}"
 # Make directories for Nextclade results
 mkdir -p nextclade_results/even_segments nextclade_results/odd_segments
 
-# Define segments and their reference names
-declare -A segments=(
-    # Even-numbered segments (HA=4, NA=6, PB1=2, NS=8)
-    ["HA"]="A_HA_H9"
-    ["NA"]="A_NA_N2" 
-    ["PB1"]="A_PB1"
-    ["NS"]="A_NS"
-    
-    # Odd-numbered segments (PB2=1, PA=3, NP=5, MP=7)
-    ["PB2"]="A_PB2"
-    ["PA"]="A_PA"
-    ["NP"]="A_NP"
-    ["MP"]="A_MP"
-)
+# Mac-compatible segment definitions (using arrays instead of associative arrays)
+SEGMENTS=("HA" "NA" "PB1" "NS" "PB2" "PA" "NP" "MP")
+REF_NAMES=("A_HA_H9" "A_NA_N2" "A_PB1" "A_NS" "A_PB2" "A_PA" "A_NP" "A_MP")
+SEGMENT_TYPES=("even" "even" "even" "even" "odd" "odd" "odd" "odd")
 
 # Use explicit path to IRMA's consensus.fasta
 REF_FILE="${HOME}/miniconda3/bin/IRMA_RES/modules/FLU_ont/reference/consensus.fasta"
@@ -281,9 +271,12 @@ echo "Using IRMA reference file: $REF_FILE"
 # First extract each reference from consensus.fasta
 TEMP_DIR=$(mktemp -d)
 
-for segment in "${!segments[@]}"; do
-    ref_name="${segments[$segment]}"
-    awk -v RS=">" -v ref="$ref_name" '$1 == ref {print ">" $0}' "$REF_FILE" | head -n -1 > "${TEMP_DIR}/${segment}_ref.fasta"
+for i in "${!SEGMENTS[@]}"; do
+    segment="${SEGMENTS[$i]}"
+    ref_name="${REF_NAMES[$i]}"
+    
+    # Mac-compatible reference extraction
+    awk -v RS=">" -v ref="$ref_name" '$1 == ref {print ">" $0}' "$REF_FILE" | grep -v '^$' > "${TEMP_DIR}/${segment}_ref.fasta"
     
     if [[ ! -s "${TEMP_DIR}/${segment}_ref.fasta" ]]; then
         echo "ERROR: Could not extract reference $ref_name from $REF_FILE" >&2
@@ -292,28 +285,22 @@ for segment in "${!segments[@]}"; do
 done
 
 # Process each segment with appropriate output folder
-for segment in "${!segments[@]}"; do
+for i in "${!SEGMENTS[@]}"; do
+    segment="${SEGMENTS[$i]}"
     INPUT_FILE="irma_consensus/${segment}_consensus_${BATCH}.fasta"
     
-    # Determine output directory based on segment type
-    case $segment in
-        HA|NA|PB1|NS)
-            OUTPUT_DIR="nextclade_results/even_segments"
-            ;;
-        PB2|PA|NP|MP)
-            OUTPUT_DIR="nextclade_results/odd_segments"
-            ;;
-        *)
-            echo "Unknown segment: $segment" >&2
-            continue
-            ;;
-    esac
+    # Determine output directory
+    if [[ "${SEGMENT_TYPES[$i]}" == "even" ]]; then
+        OUTPUT_DIR="nextclade_results/even_segments"
+    else
+        OUTPUT_DIR="nextclade_results/odd_segments"
+    fi
     
     OUTPUT_PREFIX="${OUTPUT_DIR}/${segment}_consensus_${BATCH}"
     SEGMENT_REF="${TEMP_DIR}/${segment}_ref.fasta"
     
     if [[ -f "$INPUT_FILE" ]]; then
-        echo "Processing $segment segment (${segments[$segment]}) → $OUTPUT_DIR"
+        echo "Processing $segment segment (${REF_NAMES[$i]}) → $OUTPUT_DIR"
         echo "Input file: $INPUT_FILE"
         
         nextclade run \
